@@ -2,46 +2,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 
-const FALLBACK_TEMPLATE = {
-  slug: "gpt-5.5",
-  display_name: "GPT-5.5",
-  description: "MOMO Codex model.",
-  default_reasoning_level: "high",
-  supported_reasoning_levels: [
-    { effort: "low", description: "Fast" },
-    { effort: "medium", description: "Balanced" },
-    { effort: "high", description: "Deep" }
-  ],
-  shell_type: "unified_exec",
-  visibility: "list",
-  supported_in_api: true,
-  priority: 100,
-  context_window: 272000,
-  max_context_window: 872000,
-  effective_context_window_percent: 95,
-  tool_mode: "code_mode_only",
-  support_verbosity: true,
-  default_verbosity: "low",
-  default_reasoning_summary: "none",
-  apply_patch_tool_type: "freeform",
-  web_search_tool_type: "text_and_image",
-  supports_image_detail_original: true,
-  supports_search_tool: true,
-  use_responses_lite: true,
-  node_repl_auto_review_required: false,
-  node_repl_disabled: false,
-  truncation_policy: { mode: "tokens", limit: 10000 },
-  input_modalities: ["text", "image"],
-  experimental_supported_tools: [],
-  multi_agent_version: "v2",
-  include_skills_usage_instructions: false,
-  include_plugin_usage_instructions: true,
-  include_apps_usage_instructions: true,
-  availability_nux: null,
-  upgrade: null,
-};
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const BUNDLED_JSON_PATH = join(__dirname, "bundled-model-template.json");
 
 export const DESKTOP_COMPATIBILITY_ALIASES = [
   {
@@ -92,21 +57,68 @@ export function catalogPath(env = process.env) {
   return join(codexHome(env), "model-catalogs", "momo-codex-switch.json");
 }
 
-function bundledTemplate() {
+let cachedTemplate = null;
+
+function getBundledTemplate() {
+  if (cachedTemplate) return cachedTemplate;
+  if (existsSync(BUNDLED_JSON_PATH)) {
+    try {
+      cachedTemplate = JSON.parse(readFileSync(BUNDLED_JSON_PATH, "utf8"));
+      return cachedTemplate;
+    } catch {}
+  }
   try {
     const raw = execFileSync("codex", ["debug", "models", "--bundled"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     const catalog = JSON.parse(raw);
     const found = catalog.models?.find((model) => model.slug === "gpt-5.5") || catalog.models?.[0];
     if (found) {
-      return {
-        ...FALLBACK_TEMPLATE,
-        ...found,
-      };
+      cachedTemplate = found;
+      return cachedTemplate;
     }
-    return FALLBACK_TEMPLATE;
-  } catch {
-    return FALLBACK_TEMPLATE;
-  }
+  } catch {}
+  cachedTemplate = {
+    slug: "gpt-5.5",
+    display_name: "GPT-5.5",
+    description: "MOMO Codex model.",
+    default_reasoning_level: "high",
+    supported_reasoning_levels: [
+      { effort: "low", description: "Fast" },
+      { effort: "medium", description: "Balanced" },
+      { effort: "high", description: "Deep" }
+    ],
+    shell_type: "unified_exec",
+    visibility: "list",
+    supported_in_api: true,
+    priority: 100,
+    context_window: 272000,
+    max_context_window: 872000,
+    effective_context_window_percent: 95,
+    tool_mode: "code_mode_only",
+    support_verbosity: true,
+    default_verbosity: "low",
+    default_reasoning_summary: "none",
+    apply_patch_tool_type: "freeform",
+    web_search_tool_type: "text_and_image",
+    supports_image_detail_original: true,
+    supports_search_tool: true,
+    use_responses_lite: true,
+    node_repl_auto_review_required: false,
+    node_repl_disabled: false,
+    truncation_policy: { mode: "tokens", limit: 10000 },
+    input_modalities: ["text", "image"],
+    experimental_supported_tools: [],
+    multi_agent_version: "v2",
+    include_skills_usage_instructions: false,
+    include_plugin_usage_instructions: true,
+    include_apps_usage_instructions: true,
+    base_instructions: "You are Codex, an agent based on GPT-5. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled.",
+    model_messages: {
+      instructions_template: "You are Codex, an agent based on GPT-5. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled."
+    },
+    availability_nux: null,
+    upgrade: null
+  };
+  return cachedTemplate;
 }
 
 function displayName(model) {
@@ -143,7 +155,7 @@ function parseReasoningLevels(model, fallback) {
 }
 
 export function buildCatalog(models, { includeDesktopAliases = true } = {}) {
-  const template = bundledTemplate();
+  const template = getBundledTemplate();
   const items = (models || [])
     .filter((model) => model?.id && status(model) !== "hidden" && status(model) !== "image" && status(model) !== "video")
     .map((model, offset) => {
