@@ -53,8 +53,8 @@ momo-codex-bridge uninstall [--remove-key]
 ```
 
 ```powershell
-git clone https://github.com/momo-api/momo-codex-switch.git
-cd momo-codex-switch
+git clone https://github.com/momo-api/momo-codex-bridge.git
+cd momo-codex-bridge
 node .\bin\momo-codex-switch.mjs setup --api-key $env:MOMO_API_KEY
 node .\bin\momo-codex-switch.mjs serve
 ```
