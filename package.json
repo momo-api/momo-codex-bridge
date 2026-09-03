@@ -1,0 +1,24 @@
+{
+  "name": "@momo-api/codex-bridge",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Lightweight local Codex & Desktop Responses bridge for MOMO API",
+  "type": "module",
+  "bin": {
+    "momo-codex-bridge": "bin/momo-codex-bridge.mjs",
+    "momo-codex-switch": "bin/momo-codex-switch.mjs"
+  },
+  "scripts": {
+    "start": "node bin/momo-codex-bridge.mjs serve",
+    "test": "node --test",
+    "doctor": "node bin/momo-codex-bridge.mjs doctor",
+    "models": "node bin/momo-codex-bridge.mjs models",
+    "status": "node bin/momo-codex-bridge.mjs status",
+    "test:container": "podman build -t momo-codex-switch:test . && podman run --rm momo-codex-switch:test",
+    "test:codex-container": "podman build -f Dockerfile.codex-smoke -t momo-codex-switch:codex-smoke . && podman run --rm momo-codex-switch:codex-smoke"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

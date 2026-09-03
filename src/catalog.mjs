@@ -1,0 +1,169 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+
+const FALLBACK_TEMPLATE = {
+  slug: "gpt-5.5", display_name: "GPT-5.5", description: "MOMO Codex model.", default_reasoning_level: "high",
+  supported_reasoning_levels: [{ effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" }, { effort: "high", description: "Deep" }],
+  shell_type: "shell_command", visibility: "list", supported_in_api: true, priority: 100, context_window: 200000,
+  max_context_window: 200000, effective_context_window_percent: 95, tool_mode: "code_mode_only",
+};
+
+export const DESKTOP_COMPATIBILITY_ALIASES = [
+  {
+    slug: "gpt-5.6-sol",
+    targetModel: "deepseek-v4-pro",
+    display_name: "MOMO DeepSeek V4 Pro",
+    description: "MOMO DeepSeek V4 Pro (Desktop Compatibility Slot)",
+    default_reasoning_level: "high",
+    supported_reasoning_levels: [{ effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" }, { effort: "high", description: "Deep" }],
+    visibility: "list",
+  },
+  {
+    slug: "gpt-5.6-terra",
+    targetModel: "claude-opus-4-6-thinking",
+    display_name: "MOMO Claude Opus 4.6 Thinking",
+    description: "MOMO Claude Opus 4.6 Thinking (Desktop Compatibility Slot)",
+    default_reasoning_level: "high",
+    supported_reasoning_levels: [{ effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" }, { effort: "high", description: "Deep" }, { effort: "max", description: "Maximum thinking" }],
+    visibility: "list",
+  },
+  {
+    slug: "gpt-5.6-luna",
+    targetModel: "gemini-3.7-flash",
+    display_name: "MOMO Gemini 3.7 Flash",
+    description: "MOMO Gemini 3.7 Flash (Desktop Compatibility Slot)",
+    default_reasoning_level: "high",
+    supported_reasoning_levels: [{ effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" }, { effort: "high", description: "Deep" }],
+    visibility: "list",
+  },
+];
+
+const EFFORT_DESCRIPTIONS = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Fast",
+  medium: "Balanced",
+  high: "Deep",
+  xhigh: "Extra deep",
+  max: "Maximum thinking",
+  ultra: "Ultra deep",
+};
+
+export function codexHome(env = process.env) {
+  return env.CODEX_HOME || join(homedir(), ".codex");
+}
+
+export function catalogPath(env = process.env) {
+  return join(codexHome(env), "model-catalogs", "momo-codex-switch.json");
+}
+
+function bundledTemplate() {
+  try {
+    const catalog = JSON.parse(execFileSync("codex", ["debug", "models", "--bundled"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+    return catalog.models?.find((model) => model.slug === "gpt-5.5") || catalog.models?.[0] || FALLBACK_TEMPLATE;
+  } catch {
+    return FALLBACK_TEMPLATE;
+  }
+}
+
+function displayName(model) {
+  return `MOMO ${model.id.replace(/(^|[-_])(\w)/g, (_, prefix, letter) => `${prefix}${letter.toUpperCase()}`)}`;
+}
+
+function status(model) {
+  return model.agent_status || model.agentStatus || "experimental";
+}
+
+function parseReasoningLevels(model, fallback) {
+  const r = model.reasoning || {};
+  if (r.state === "unsupported") {
+    return { default_reasoning_level: null, supported_reasoning_levels: [] };
+  }
+  if (Array.isArray(r.efforts) && r.efforts.length > 0) {
+    const levels = r.efforts.map((effort) => ({
+      effort,
+      description: EFFORT_DESCRIPTIONS[effort] || effort,
+    }));
+    const defaultEffort = r.default_effort || r.defaultEffort || levels[levels.length - 1]?.effort || "high";
+    return { default_reasoning_level: defaultEffort, supported_reasoning_levels: levels };
+  }
+  if (Array.isArray(model.supported_reasoning_levels) && model.supported_reasoning_levels.length > 0) {
+    return {
+      default_reasoning_level: model.default_reasoning_level || "high",
+      supported_reasoning_levels: model.supported_reasoning_levels,
+    };
+  }
+  return {
+    default_reasoning_level: fallback.default_reasoning_level || "high",
+    supported_reasoning_levels: fallback.supported_reasoning_levels || [],
+  };
+}
+
+export function buildCatalog(models, { includeDesktopAliases = true } = {}) {
+  const template = bundledTemplate();
+  const items = (models || [])
+    .filter((model) => model?.id && status(model) !== "hidden" && status(model) !== "image" && status(model) !== "video")
+    .map((model, offset) => {
+      const reasoning = parseReasoningLevels(model, template);
+      return {
+        ...structuredClone(template),
+        slug: model.id,
+        display_name: model.display_name || displayName(model),
+        description: model.description || `MOMO model (${model.provider || "gateway"}).`,
+        visibility: status(model) === "stable" ? "list" : "hide",
+        priority: 200 + offset,
+        context_window: model.context_window || 200000,
+        max_context_window: model.context_window || 200000,
+        tool_mode: "code_mode_only",
+        supported_in_api: true,
+        availability_nux: null,
+        default_reasoning_level: reasoning.default_reasoning_level,
+        supported_reasoning_levels: reasoning.supported_reasoning_levels,
+      };
+    });
+
+  if (includeDesktopAliases) {
+    const existingSlugs = new Set(items.map((i) => i.slug));
+    for (const alias of DESKTOP_COMPATIBILITY_ALIASES) {
+      if (!existingSlugs.has(alias.slug)) {
+        items.unshift({
+          ...structuredClone(template),
+          slug: alias.slug,
+          display_name: alias.display_name,
+          description: alias.description,
+          visibility: alias.visibility,
+          priority: 150,
+          tool_mode: "code_mode_only",
+          supported_in_api: true,
+          default_reasoning_level: alias.default_reasoning_level,
+          supported_reasoning_levels: alias.supported_reasoning_levels,
+        });
+      }
+    }
+  }
+
+  if (!items.length) throw new Error("MOMO returned no Codex-compatible models.");
+  return { models: items };
+}
+
+export function writeCatalog(models, env = process.env, options = {}) {
+  const target = catalogPath(env);
+  mkdirSync(dirname(target), { recursive: true });
+  const content = `${JSON.stringify(buildCatalog(models, options), null, 2)}\n`;
+  const tempFile = `${target}.${randomUUID()}.tmp`;
+  writeFileSync(tempFile, content);
+  try {
+    renameSync(tempFile, target);
+  } catch {
+    writeFileSync(target, content);
+  }
+  return target;
+}
+
+export function readCatalog(env = process.env) {
+  const target = catalogPath(env);
+  return existsSync(target) ? JSON.parse(readFileSync(target, "utf8")) : null;
+}
