@@ -29,8 +29,8 @@ if (-not $node) {
   if ($winget) {
     Write-Step "Installing Node.js LTS via winget..."
     & $winget.Source install --id OpenJS.NodeJS.LTS --exact --source winget --accept-package-agreements --accept-source-agreements
-    $nodeDir = Join-Path $env:ProgramFiles "nodejs"
-    if (Test-Path (Join-Path $nodeDir "node.exe")) {
+    $nodeDir = [System.IO.Path]::Combine($env:ProgramFiles, "nodejs")
+    if (Test-Path ([System.IO.Path]::Combine($nodeDir, "node.exe"))) {
       $env:Path = "$nodeDir;$env:Path"
     }
     $node = Get-Command node -ErrorAction SilentlyContinue
@@ -63,15 +63,15 @@ if (-not $ApiKey) {
 }
 
 # 3. Download / Install to ~/.momo-codex-bridge
-$installDir = Join-Path $HOME ".momo-codex-bridge" "app"
+$installDir = [System.IO.Path]::Combine($HOME, ".momo-codex-bridge", "app")
 if (Test-Path $installDir) {
   Remove-Item -Recurse -Force $installDir
 }
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
 Write-Step "Downloading latest release package from GitHub..."
-$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.4.0/momo-api-codex-bridge-0.4.0.tgz"
-$tgzPath = Join-Path $HOME ".momo-codex-bridge" "package.tgz"
+$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.4.1/momo-api-codex-bridge-0.4.1.tgz"
+$tgzPath = [System.IO.Path]::Combine($HOME, ".momo-codex-bridge", "package.tgz")
 
 try {
   Invoke-WebRequest -Uri $tgzUrl -OutFile $tgzPath -UseBasicParsing
@@ -84,11 +84,11 @@ try {
 
 # 4. Run Setup
 Write-Step "Configuring Codex provider & syncing models..."
-$bridgeBin = Join-Path $installDir "bin" "momo-codex-bridge.mjs"
+$bridgeBin = [System.IO.Path]::Combine($installDir, "bin", "momo-codex-bridge.mjs")
 $setupArgs = @($bridgeBin, "install", "--api-key", $ApiKey, "--endpoint", $Endpoint, "--port", "$Port")
 if ($NoAutostart) { $setupArgs += "--no-autostart" }
 
-& node.exe @setupArgs
+& node @setupArgs
 if ($LASTEXITCODE -ne 0) {
   Write-Err "Setup failed with exit code $LASTEXITCODE"
   exit $LASTEXITCODE
@@ -96,10 +96,10 @@ if ($LASTEXITCODE -ne 0) {
 
 # 5. Launch Background Service
 Write-Step "Starting MOMO Codex Bridge daemon..."
-Start-Process -FilePath "node.exe" -ArgumentList @($bridgeBin, "serve") -WindowStyle Hidden
+Start-Process -FilePath "node" -ArgumentList @($bridgeBin, "serve") -WindowStyle Hidden
 
 # 6. Register PATH
-$binDir = Join-Path $installDir "bin"
+$binDir = [System.IO.Path]::Combine($installDir, "bin")
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$binDir*") {
   [Environment]::SetEnvironmentVariable("Path", "$binDir;$userPath", "User")
