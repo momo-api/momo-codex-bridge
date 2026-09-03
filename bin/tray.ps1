@@ -108,6 +108,16 @@ $modelsItem.add_Click({
   [System.Windows.Forms.MessageBox]::Show($output, "MOMO Codex Bridge - Models", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
 })
 
+$logsItem = $contextMenu.Items.Add("View Bridge Logs (bridge.log)")
+$logsItem.add_Click({
+  $logFile = [System.IO.Path]::Combine($env:USERPROFILE, ".momo-codex-bridge", "bridge.log")
+  if (Test-Path $logFile) {
+    Start-Process "notepad.exe" -ArgumentList $logFile
+  } else {
+    [System.Windows.Forms.MessageBox]::Show("Log file is empty or not yet created: " + $logFile, "Notice", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+  }
+})
+
 $configItem = $contextMenu.Items.Add("Open config.toml")
 $configItem.add_Click({
   $cfgPath = [System.IO.Path]::Combine($env:USERPROFILE, ".codex", "config.toml")

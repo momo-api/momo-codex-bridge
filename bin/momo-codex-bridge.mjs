@@ -5,6 +5,7 @@ import { rollback, setup, uninstall } from "../src/setup.mjs";
 import { readCatalog } from "../src/catalog.mjs";
 import { syncCatalog, startAutoSync } from "../src/sync.mjs";
 import { runDoctor } from "../src/doctor.mjs";
+import { logPath, readRecentLogs } from "../src/logger.mjs";
 
 const [command = "help", ...args] = process.argv.slice(2);
 const value = (name) => {
@@ -106,6 +107,16 @@ async function main() {
     const report = await runDoctor();
     console.log(JSON.stringify(report, null, 2));
     if (!report.ok) process.exitCode = 1;
+  } else if (command === "logs" || command === "log") {
+    const count = Number(value("-n") || value("--lines") || 50);
+    const logs = readRecentLogs(count);
+    if (!logs.length) {
+      console.log("No log entries yet. (Log path: " + logPath() + ")");
+    } else {
+      console.log("=== Recent MOMO Codex Bridge Logs (Last " + logs.length + " entries) ===");
+      console.log(logs.join("\n"));
+      console.log("Log file: " + logPath());
+    }
   } else if (command === "test") {
     const model = args[0] || "gpt-5.5";
     const settings = resolveSettings();
@@ -160,7 +171,7 @@ async function main() {
     const result = uninstall({ removeKey: hasFlag("--remove-key") });
     console.log("Uninstall complete:", result);
   } else {
-    console.log("MOMO Codex Bridge - Lightweight local Responses & Desktop Proxy\n\nUsage:\n  momo-codex-bridge install --api-key <MOMO_KEY> [--endpoint URL] [--port PORT]\n  momo-codex-bridge serve\n  momo-codex-bridge status\n  momo-codex-bridge models\n  momo-codex-bridge sync\n  momo-codex-bridge doctor\n  momo-codex-bridge test <model>\n  momo-codex-bridge rollback\n  momo-codex-bridge uninstall [--remove-key]\n");
+    console.log("MOMO Codex Bridge - Lightweight local Responses & Desktop Proxy\n\nUsage:\n  momo-codex-bridge install --api-key <MOMO_KEY> [--endpoint URL] [--port PORT]\n  momo-codex-bridge serve\n  momo-codex-bridge status\n  momo-codex-bridge models\n  momo-codex-bridge sync\n  momo-codex-bridge doctor\n  momo-codex-bridge logs [-n 50]\n  momo-codex-bridge test <model>\n  momo-codex-bridge rollback\n  momo-codex-bridge uninstall [--remove-key]\n");
   }
 }
 

@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { extractFunctions, restoreToolName } from "./tools.mjs";
 import { completed, customToolEvents, functionEvents, parseSse, responseCreated, sseError, textEvents } from "./responses-sse.mjs";
+import { logRequest } from "./logger.mjs";
 
 const GEMINI_PREFIX = /^gemini-/;
 const CLAUDE_PREFIX = /^claude-/;
@@ -160,9 +161,54 @@ function writeSse(response, chunks) {
   response.end();
 }
 
+async function* streamSseLines(body) {
+  if (!body) return;
+  if (typeof body === "string") {
+    for (const data of parseSse(body)) yield data;
+    return;
+  }
+  let buffer = "";
+  for await (const chunk of body) {
+    buffer += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || "";
+    for (const block of blocks) {
+      const dataLine = block.split(/\r?\n/).find((l) => l.startsWith("data:"));
+      if (!dataLine) continue;
+      const jsonStr = dataLine.slice(5).trim();
+      if (!jsonStr || jsonStr === "[DONE]") continue;
+      try { yield JSON.parse(jsonStr); } catch {}
+    }
+  }
+  if (buffer.trim()) {
+    const dataLine = buffer.split(/\r?\n/).find((l) => l.startsWith("data:"));
+    if (dataLine) {
+      const jsonStr = dataLine.slice(5).trim();
+      if (jsonStr && jsonStr !== "[DONE]") {
+        try { yield JSON.parse(jsonStr); } catch {}
+      }
+    }
+  }
+}
+
+function initSseResponse(response) {
+  response.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache",
+    "connection": "keep-alive",
+    "x-accel-buffering": "no"
+  });
+}
+
 async function forwardResponses(request, response, settings, payload, fetchImpl, signal) {
   const upstream = await fetchImpl(settings.endpoint + "/v1/responses", { method: "POST", headers: upstreamHeaders(settings), body: JSON.stringify({ ...payload, stream: true }), signal });
-  response.writeHead(upstream.status, Object.fromEntries(upstream.headers.entries()));
+  if (!upstream.ok) {
+    const errText = await upstream.text();
+    response.writeHead(upstream.status, { "content-type": "application/json" });
+    response.end(errText);
+    return;
+  }
+  initSseResponse(response);
   if (!upstream.body) return response.end();
   for await (const chunk of upstream.body) response.write(chunk);
   response.end();
@@ -173,14 +219,16 @@ async function bridgeGemini(response, settings, payload, calls, fetchImpl, signa
   const endpoint = settings.endpoint + "/v1beta/models/" + encodeURIComponent(payload.model) + ":streamGenerateContent?alt=sse";
   const upstream = await fetchImpl(endpoint, { method: "POST", headers: upstreamHeaders(settings), body: JSON.stringify(body), signal });
   if (!upstream.ok) throw new Error(`Gemini upstream returned ${upstream.status}: ${(await upstream.text()).slice(0, 500)}`);
-  const events = parseSse(await upstream.text());
+  initSseResponse(response);
   const created = responseCreated(payload.model);
+  response.write(created.data);
   const output = [];
-  const chunks = [created.data];
   let index = 0;
-  for (const data of events) {
+  for await (const data of streamSseLines(upstream.body || (await upstream.text()))) {
     for (const part of data?.candidates?.[0]?.content?.parts || []) {
-      if (part.text) chunks.push(...textEvents(created.responseId, index++, part.text));
+      if (part.text) {
+        for (const ev of textEvents(created.responseId, index++, part.text)) response.write(ev);
+      }
       if (part.functionCall) {
         const mapped = restoreToolName(part.functionCall.name, functions);
         const tool = mapped.kind === "custom"
@@ -194,28 +242,31 @@ async function bridgeGemini(response, settings, payload, calls, fetchImpl, signa
           geminiContents: body.contents,
           geminiFunctionCallPart: structuredClone(part),
         });
-        chunks.push(...tool.events);
+        for (const ev of tool.events) response.write(ev);
         output.push(mapped.kind === "custom"
           ? { type: "custom_tool_call", call_id: tool.callId, name: mapped.originalName, input: customInput(part.functionCall.args) }
           : { type: "function_call", call_id: tool.callId, name: mapped.originalName });
       }
     }
   }
-  chunks.push(completed(created.responseId, payload.model, output));
-  writeSse(response, chunks);
+  response.write(completed(created.responseId, payload.model, output));
+  response.end();
 }
 
 async function bridgeClaude(response, settings, payload, calls, fetchImpl, signal) {
   const { body, functions } = claudeRequest(payload, payload.model, calls);
   const upstream = await fetchImpl(settings.endpoint + "/v1/messages", { method: "POST", headers: { ...upstreamHeaders(settings), "anthropic-version": "2023-06-01" }, body: JSON.stringify(body), signal });
   if (!upstream.ok) throw new Error(`Claude upstream returned ${upstream.status}: ${(await upstream.text()).slice(0, 500)}`);
+  initSseResponse(response);
   const created = responseCreated(payload.model);
-  const chunks = [created.data];
+  response.write(created.data);
   const output = [];
   const toolBlocks = new Map();
   let index = 0;
-  for (const data of parseSse(await upstream.text())) {
-    if (data.type === "content_block_delta" && data.delta?.type === "text_delta") chunks.push(...textEvents(created.responseId, index++, data.delta.text));
+  for await (const data of streamSseLines(upstream.body || (await upstream.text()))) {
+    if (data.type === "content_block_delta" && data.delta?.type === "text_delta") {
+      for (const ev of textEvents(created.responseId, index++, data.delta.text)) response.write(ev);
+    }
     if (data.type === "content_block_start" && data.content_block?.type === "tool_use") {
       toolBlocks.set(data.index, { id: data.content_block.id, name: data.content_block.name, input: data.content_block.input || {}, partialJson: "" });
     }
@@ -235,45 +286,70 @@ async function bridgeClaude(response, settings, payload, calls, fetchImpl, signa
         ? customToolEvents(created.responseId, index++, { callId: block.id, name: mapped.originalName, input: customInput(argumentsValue) })
         : functionEvents(created.responseId, index++, { callId: block.id, name: mapped.originalName, arguments: argumentsValue });
       calls.set(tool.callId, { name: mapped.name, originalName: mapped.originalName, kind: mapped.kind, arguments: argumentsValue, claudeMessages: body.messages });
-      chunks.push(...tool.events);
+      for (const ev of tool.events) response.write(ev);
       output.push(mapped.kind === "custom"
         ? { type: "custom_tool_call", call_id: tool.callId, name: mapped.originalName, input: customInput(argumentsValue) }
         : { type: "function_call", call_id: tool.callId, name: mapped.originalName });
     }
   }
-  chunks.push(completed(created.responseId, payload.model, output));
-  writeSse(response, chunks);
+  response.write(completed(created.responseId, payload.model, output));
+  response.end();
 }
 
 export function createMomoSwitch(settings, { fetchImpl = fetch } = {}) {
   const calls = new Map();
   return createServer(async (request, response) => {
+    const t0 = Date.now();
     const abortController = new AbortController();
+    const remoteIp = request.socket?.remoteAddress || "";
+    let requestedModel = null;
+    let finalStatus = 200;
     request.on("close", () => {
       if (!response.writableEnded) abortController.abort();
     });
     try {
       if (request.method === "GET" && request.url === "/healthz") {
+        logRequest({ method: "GET", url: "/healthz", status: 200, elapsedMs: Date.now() - t0, ip: remoteIp });
         return json(response, 200, { ok: true, service: "momo-codex-bridge", version: "0.4.0", host: settings.host, port: settings.port });
       }
-      if (!authorized(request, settings)) return json(response, 401, { error: { message: "Invalid local MOMO Switch token.", type: "authentication_error" } });
+      if (!authorized(request, settings)) {
+        finalStatus = 401;
+        logRequest({ method: request.method, url: request.url, status: 401, elapsedMs: Date.now() - t0, error: "Unauthorized", ip: remoteIp });
+        return json(response, 401, { error: { message: "Invalid local MOMO Switch token.", type: "authentication_error" } });
+      }
       if (request.method === "GET" && request.url === "/v1/models") {
         const upstream = await fetchImpl(settings.endpoint + "/v1/models", { headers: upstreamHeaders(settings), signal: abortController.signal });
+        finalStatus = upstream.status;
+        logRequest({ method: "GET", url: "/v1/models", status: finalStatus, elapsedMs: Date.now() - t0, ip: remoteIp });
         return json(response, upstream.status, await upstream.json());
       }
       if (request.method === "POST" && request.url === "/v1/responses") {
         const payload = await bodyOf(request);
-        if (!payload.model) return json(response, 400, { error: { message: "model is required", type: "invalid_request_error" } });
+        requestedModel = payload.model;
+        if (!payload.model) {
+          finalStatus = 400;
+          logRequest({ method: "POST", url: "/v1/responses", status: 400, elapsedMs: Date.now() - t0, error: "model is required", ip: remoteIp });
+          return json(response, 400, { error: { message: "model is required", type: "invalid_request_error" } });
+        }
         const { targetModel, protocol } = resolveTargetModel(payload.model);
         const routedPayload = { ...payload, model: targetModel };
-        if (protocol === "responses") return await forwardResponses(request, response, settings, routedPayload, fetchImpl, abortController.signal);
-        if (protocol === "gemini") return await bridgeGemini(response, settings, routedPayload, calls, fetchImpl, abortController.signal);
-        return await bridgeClaude(response, settings, routedPayload, calls, fetchImpl, abortController.signal);
+        
+        let handlerPromise;
+        if (protocol === "responses") handlerPromise = forwardResponses(request, response, settings, routedPayload, fetchImpl, abortController.signal);
+        else if (protocol === "gemini") handlerPromise = bridgeGemini(response, settings, routedPayload, calls, fetchImpl, abortController.signal);
+        else handlerPromise = bridgeClaude(response, settings, routedPayload, calls, fetchImpl, abortController.signal);
+
+        await handlerPromise;
+        logRequest({ method: "POST", url: "/v1/responses", model: requestedModel, status: response.statusCode || 200, elapsedMs: Date.now() - t0, ip: remoteIp });
+        return;
       }
+      finalStatus = 404;
+      logRequest({ method: request.method, url: request.url, status: 404, elapsedMs: Date.now() - t0, ip: remoteIp });
       return json(response, 404, { error: { message: "Not found", type: "invalid_request_error" } });
     } catch (error) {
       if (abortController.signal.aborted) return;
-      if (request.url === "/v1/responses") return writeSse(response, [sseError(error.message)]);
+      logRequest({ method: request.method, url: request.url, model: requestedModel, status: 502, elapsedMs: Date.now() - t0, error: error.message, ip: remoteIp });
+      if (request.url === "/v1/responses") return response.writeHead(200, { "content-type": "text/event-stream" }).end(sseError(error.message));
       return json(response, 502, { error: { message: error.message, type: "server_error" } });
     }
   });

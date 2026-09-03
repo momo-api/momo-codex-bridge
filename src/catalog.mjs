@@ -129,6 +129,20 @@ function status(model) {
   return model.agent_status || model.agentStatus || "experimental";
 }
 
+function isImageOrNonText(model) {
+  if (!model?.id) return true;
+  const id = model.id.toLowerCase();
+  if (id.includes("-image") || id.includes("imagine") || id.includes("flux") || id.includes("midjourney") || id.includes("dall-e") || id.includes("sora")) {
+    return true;
+  }
+  if (Array.isArray(model.capabilities) && model.capabilities.length > 0) {
+    if (!model.capabilities.includes("text") && (model.capabilities.includes("image_generation") || model.capabilities.includes("video_generation"))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function parseReasoningLevels(model, fallback) {
   const r = model.reasoning || {};
   if (r.state === "unsupported") {
@@ -157,7 +171,7 @@ function parseReasoningLevels(model, fallback) {
 export function buildCatalog(models, { includeDesktopAliases = true } = {}) {
   const template = getBundledTemplate();
   const items = (models || [])
-    .filter((model) => model?.id && status(model) !== "hidden" && status(model) !== "image" && status(model) !== "video")
+    .filter((model) => model?.id && status(model) !== "hidden" && status(model) !== "image" && status(model) !== "video" && !isImageOrNonText(model))
     .map((model, offset) => {
       const reasoning = parseReasoningLevels(model, template);
       return {
