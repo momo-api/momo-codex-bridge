@@ -13,12 +13,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
       - run: npm test
 
   container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build --tag momo-codex-switch:test .
-      - run: docker run --rm momo-codex-switch:test
+      - run: docker build --tag momo-codex-bridge:test .
+      - run: docker run --rm momo-codex-bridge:test
