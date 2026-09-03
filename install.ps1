@@ -70,7 +70,7 @@ if (Test-Path $installDir) {
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
 Write-Step "Downloading latest release package from GitHub..."
-$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.5.3/momo-api-codex-bridge-0.5.3.tgz"
+$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.5.5/momo-api-codex-bridge-0.5.5.tgz"
 $tgzPath = [System.IO.Path]::Combine($HOME, ".momo-codex-bridge", "package.tgz")
 
 try {
@@ -108,13 +108,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 6. Launch Background Service & System Tray Companion
+Write-Step "Stopping any existing MOMO Codex Bridge instance on port $Port..."
+try {
+  $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+  foreach ($conn in $conns) {
+    Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+  }
+} catch {}
+
 Write-Step "Starting MOMO Codex Bridge daemon & Taskbar Tray..."
 Start-Process -FilePath "node" -ArgumentList @($bridgeBin, "serve") -WindowStyle Hidden
 if (Test-Path $trayPs1) {
   Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", $trayPs1) -WindowStyle Hidden
 }
 
-# 7. Register PATH & current session function
+# 7. Register PATH, environment variables & current session function
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$binDir*") {
   [Environment]::SetEnvironmentVariable("Path", "$binDir;$userPath", "User")
@@ -133,7 +141,7 @@ Write-Success "  MOMO Codex Bridge installed and running successfully!   "
 Write-Success "=========================================================="
 Write-Host ""
 Write-Host "Local Bridge is listening on: http://127.0.0.1:$Port/v1" -ForegroundColor Yellow
-Write-Host "Taskbar System Tray Icon (Indigo M badge with Green Dot) is now active." -ForegroundColor Green
+Write-Host "Taskbar System Tray Icon (Indigo M badge with Green Dot) is active." -ForegroundColor Green
 Write-Host "Codex CLI & ChatGPT Desktop have been configured with requires_openai_auth=false" -ForegroundColor Yellow
 Write-Host "Synced models are ready. Restart Codex App to use." -ForegroundColor Yellow
 Write-Host ""

@@ -25,17 +25,15 @@ export function checkCodexConfig(env = process.env) {
   const home = env.CODEX_HOME || join(homedir(), ".codex");
   const configFile = join(home, "config.toml");
   if (!existsSync(configFile)) {
-    return { exists: false, managed: false, requiresOpenAiAuthFalse: false, error: "config.toml not found at " + configFile };
+    return { exists: false, managed: false, hasResponsesWire: false, error: "config.toml not found at " + configFile };
   }
   const content = readFileSync(configFile, "utf8");
   const managed = content.includes("MOMO_CODEX_SWITCH_MANAGED") || content.includes("[model_providers.momo-switch]");
-  const requiresOpenAiAuthFalse = /requires_openai_auth\s*=\s*false/i.test(content);
   const hasResponsesWire = /wire_api\s*=\s*"responses"/i.test(content);
   return {
     exists: true,
     configFile,
     managed,
-    requiresOpenAiAuthFalse,
     hasResponsesWire,
   };
 }
@@ -65,10 +63,10 @@ export async function runDoctor({ env = process.env, fetchImpl = fetch } = {}) {
 
   const configCheck = checkCodexConfig(env);
   results.checks.codexConfig = {
-    ok: configCheck.exists && configCheck.requiresOpenAiAuthFalse,
+    ok: configCheck.exists && configCheck.managed && configCheck.hasResponsesWire,
     ...configCheck,
   };
-  if (!configCheck.exists || !configCheck.requiresOpenAiAuthFalse) results.ok = false;
+  if (!configCheck.exists || !configCheck.managed || !configCheck.hasResponsesWire) results.ok = false;
 
   const catalog = readCatalog(env);
   const catPath = catalogPath(env);

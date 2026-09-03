@@ -165,7 +165,7 @@ export function buildCatalog(models, { includeDesktopAliases = true } = {}) {
         slug: model.id,
         display_name: model.display_name || displayName(model),
         description: model.description || ("MOMO model (" + (model.provider || "gateway") + ")."),
-        visibility: status(model) === "stable" ? "list" : "hide",
+        visibility: status(model) !== "hidden" ? "list" : "hide",
         priority: 200 + offset,
         context_window: model.context_window || template.context_window || 272000,
         max_context_window: model.max_context_window || template.max_context_window || 872000,

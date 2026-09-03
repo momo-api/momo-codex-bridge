@@ -31,7 +31,7 @@ rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 
 echo "==> [momo-codex-bridge] Downloading latest release from GitHub..."
-TGZ_URL="https://github.com/momo-api/momo-codex-bridge/releases/download/v0.5.3/momo-api-codex-bridge-0.5.3.tgz"
+TGZ_URL="https://github.com/momo-api/momo-codex-bridge/releases/download/v0.5.5/momo-api-codex-bridge-0.5.5.tgz"
 
 if command -v curl >/dev/null 2>&1; then
   curl -fsSL "$TGZ_URL" | tar -xz -C "$INSTALL_DIR" --strip-components=1 || git clone https://github.com/momo-api/momo-codex-bridge.git "$INSTALL_DIR"
@@ -48,6 +48,11 @@ echo "==> [momo-codex-bridge] Configuring Codex provider and syncing models..."
 node "$BRIDGE_BIN" install --api-key "$API_KEY" --endpoint "$ENDPOINT" --port "$PORT"
 
 echo "==> [momo-codex-bridge] Starting background daemon..."
+if command -v lsof >/dev/null 2>&1; then
+  lsof -ti :"$PORT" | xargs kill -9 2>/dev/null || true
+elif command -v fuser >/dev/null 2>&1; then
+  fuser -k "$PORT/tcp" 2>/dev/null || true
+fi
 nohup node "$BRIDGE_BIN" serve > /dev/null 2>&1 &
 
 echo ""

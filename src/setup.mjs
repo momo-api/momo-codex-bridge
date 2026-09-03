@@ -63,8 +63,7 @@ function managedConfig(catalog, port, defaultModel) {
     'name = "MOMO Codex Bridge"\n' +
     'base_url = "http://127.0.0.1:' + port + '/v1"\n' +
     'wire_api = "responses"\n' +
-    'requires_openai_auth = false\n' +
-    'env_key = "OPENAI_API_KEY"\n';
+    'requires_openai_auth = false\n';
 }
 
 function isCodexCandidate(model) {
@@ -109,7 +108,7 @@ export async function setup({ apiKey, endpoint, port = 18789, autostart = true, 
   writeCatalog(models, env, { includeDesktopAliases: desktopAliases });
   const finalConfig = managedConfig(catalog, port, defaultModel) + (cleanedOther ? "\n\n" + cleanedOther + "\n" : "\n");
   writeFileSync(config, finalConfig);
-  writeFileSync(auth, JSON.stringify({ OPENAI_API_KEY: localToken }, null, 2) + "\n");
+  writeFileSync(auth, JSON.stringify({ OPENAI_API_KEY: localToken, "momo-switch": localToken }, null, 2) + "\n");
   const settingsFile = writeSettings(settings, env);
 
   let autostartResult = null;

@@ -59,7 +59,7 @@ test("doctor and uninstall lifecycle verification", async () => {
   try {
     await setup({ apiKey: "momo-secret", endpoint: "https://gateway.example", fetchImpl: fakeFetch, env });
     const report = await runDoctor({ env, fetchImpl: fakeFetch });
-    assert.equal(report.checks.codexConfig.requiresOpenAiAuthFalse, true);
+    assert.equal(report.checks.codexConfig.hasResponsesWire, true);
     assert.equal(report.checks.catalog.ok, true);
     assert.equal(report.checks.autostart.installed, true);
 
