@@ -26,6 +26,22 @@ It is deliberately MOMO-specific. It does not collect provider keys, run an acco
 
 ## CLI Usage
 
+### One-Click Quick Install
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/momo-api/momo-codex-bridge/main/install.ps1 | iex
+```
+
+**macOS / Linux (Bash):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/momo-api/momo-codex-bridge/main/install.sh | bash
+```
+
+---
+
+### Manual Commands
+
 ```bash
 # Install & configure
 momo-codex-bridge install --api-key <MOMO_KEY>
