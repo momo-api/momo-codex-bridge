@@ -16,26 +16,35 @@ function backup(file) {
   }
 }
 
-function cleanPreviousConfig(content) {
-  if (!content || !content.includes(MARKER)) return content;
+export function cleanConfigToml(content) {
+  if (!content) return "";
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const kept = [];
-  let skipping = false;
-  for (const line of lines) {
-    if (line.includes(MARKER)) {
-      skipping = true;
+  let inMomoSection = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.includes("MOMO_CODEX_SWITCH_MANAGED")) {
       continue;
     }
-    if (skipping) {
-      if (line.startsWith("[") && !line.includes("momo-switch")) {
-        skipping = false;
-        kept.push(line);
-      } else if (line.trim() === "") {
+    if (trimmed.startsWith("[")) {
+      if (trimmed === "[model_providers.momo-switch]" || trimmed === '[model_providers."momo-switch"]') {
+        inMomoSection = true;
         continue;
-      } else if (!line.startsWith("model") && !line.startsWith("disable_response_storage") && !line.startsWith("requires_openai_auth") && !line.startsWith("wire_api") && !line.startsWith("base_url") && !line.startsWith('name = "MOMO') && !line.startsWith("env_key") && !line.startsWith("[model_providers.momo-switch]")) {
-        skipping = false;
-        kept.push(line);
+      } else {
+        inMomoSection = false;
       }
+    }
+    if (inMomoSection) {
+      continue;
+    }
+    if (
+      trimmed.startsWith("model_provider =") ||
+      trimmed.startsWith("model =") ||
+      trimmed.startsWith("model_reasoning_effort =") ||
+      trimmed.startsWith("model_catalog_json =") ||
+      trimmed.startsWith("disable_response_storage =")
+    ) {
       continue;
     }
     kept.push(line);
@@ -93,12 +102,13 @@ export async function setup({ apiKey, endpoint, port = 18789, autostart = true, 
   const catalog = catalogPath(env);
   backup(config); backup(auth); backup(catalog);
   const previousRaw = existsSync(config) ? readFileSync(config, "utf8") : "";
-  const previous = cleanPreviousConfig(previousRaw);
+  const cleanedOther = cleanConfigToml(previousRaw);
   const candidates = models.filter(isCodexCandidate);
   const defaultModel = candidates.find((model) => (model.agent_status || model.agentStatus) === "stable")?.id || candidates[0]?.id;
   if (!defaultModel) throw new Error("MOMO returned no Codex-compatible models.");
   writeCatalog(models, env, { includeDesktopAliases: desktopAliases });
-  writeFileSync(config, managedConfig(catalog, port, defaultModel) + (previous ? "\n" + previous + "\n" : ""));
+  const finalConfig = managedConfig(catalog, port, defaultModel) + (cleanedOther ? "\n\n" + cleanedOther + "\n" : "\n");
+  writeFileSync(config, finalConfig);
   writeFileSync(auth, JSON.stringify({ OPENAI_API_KEY: localToken }, null, 2) + "\n");
   const settingsFile = writeSettings(settings, env);
 

@@ -70,7 +70,7 @@ if (Test-Path $installDir) {
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
 Write-Step "Downloading latest release package from GitHub..."
-$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.5.1/momo-api-codex-bridge-0.5.1.tgz"
+$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.5.2/momo-api-codex-bridge-0.5.2.tgz"
 $tgzPath = [System.IO.Path]::Combine($HOME, ".momo-codex-bridge", "package.tgz")
 
 try {
