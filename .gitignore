@@ -2,3 +2,5 @@ node_modules/
 .momo-codex-switch/
 coverage/
 *.log
+
+*.tgz

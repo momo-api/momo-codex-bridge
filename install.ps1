@@ -70,7 +70,7 @@ if (Test-Path $installDir) {
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
 Write-Step "Downloading latest release package from GitHub..."
-$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.4.1/momo-api-codex-bridge-0.4.1.tgz"
+$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.4.2/momo-api-codex-bridge-0.4.2.tgz"
 $tgzPath = [System.IO.Path]::Combine($HOME, ".momo-codex-bridge", "package.tgz")
 
 try {
@@ -82,9 +82,21 @@ try {
   git clone https://github.com/momo-api/momo-codex-bridge.git $installDir
 }
 
-# 4. Run Setup
+# 4. Generate Windows CLI wrappers in bin
+$binDir = [System.IO.Path]::Combine($installDir, "bin")
+$bridgeBin = [System.IO.Path]::Combine($binDir, "momo-codex-bridge.mjs")
+$bridgeCmd = [System.IO.Path]::Combine($binDir, "momo-codex-bridge.cmd")
+$bridgePs1 = [System.IO.Path]::Combine($binDir, "momo-codex-bridge.ps1")
+$switchCmd = [System.IO.Path]::Combine($binDir, "momo-codex-switch.cmd")
+$switchPs1 = [System.IO.Path]::Combine($binDir, "momo-codex-switch.ps1")
+
+"@echo off`r`nnode `"%~dp0momo-codex-bridge.mjs`" %*" | Set-Content -Path $bridgeCmd -Encoding Ascii
+"& node `"`$PSScriptRoot\\momo-codex-bridge.mjs`" @args" | Set-Content -Path $bridgePs1 -Encoding Utf8
+"@echo off`r`nnode `"%~dp0momo-codex-switch.mjs`" %*" | Set-Content -Path $switchCmd -Encoding Ascii
+"& node `"`$PSScriptRoot\\momo-codex-switch.mjs`" @args" | Set-Content -Path $switchPs1 -Encoding Utf8
+
+# 5. Run Setup
 Write-Step "Configuring Codex provider & syncing models..."
-$bridgeBin = [System.IO.Path]::Combine($installDir, "bin", "momo-codex-bridge.mjs")
 $setupArgs = @($bridgeBin, "install", "--api-key", $ApiKey, "--endpoint", $Endpoint, "--port", "$Port")
 if ($NoAutostart) { $setupArgs += "--no-autostart" }
 
@@ -94,17 +106,23 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-# 5. Launch Background Service
+# 6. Launch Background Service
 Write-Step "Starting MOMO Codex Bridge daemon..."
 Start-Process -FilePath "node" -ArgumentList @($bridgeBin, "serve") -WindowStyle Hidden
 
-# 6. Register PATH
-$binDir = [System.IO.Path]::Combine($installDir, "bin")
+# 7. Register PATH & current session function
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$binDir*") {
   [Environment]::SetEnvironmentVariable("Path", "$binDir;$userPath", "User")
+}
+if ($env:Path -notlike "*$binDir*") {
   $env:Path = "$binDir;$env:Path"
 }
+
+function global:momo-codex-bridge { & node "$bridgeBin" @args }
+function global:momo-codex-switch { & node "$bridgeBin" @args }
+
+Start-Sleep -Milliseconds 500
 
 Write-Success "=========================================================="
 Write-Success "  MOMO Codex Bridge installed and running successfully!   "
@@ -114,7 +132,10 @@ Write-Host "Local Bridge is listening on: http://127.0.0.1:$Port/v1" -Foreground
 Write-Host "Codex CLI & ChatGPT Desktop have been configured with requires_openai_auth=false" -ForegroundColor Yellow
 Write-Host "Synced models are ready. Restart Codex App to use." -ForegroundColor Yellow
 Write-Host ""
-Write-Host "Commands:"
+Write-Host "Health Status:" -ForegroundColor Cyan
+& node "$bridgeBin" status
+Write-Host ""
+Write-Host "Commands available in this and new terminals:"
 Write-Host "  momo-codex-bridge status   - Check bridge running status"
 Write-Host "  momo-codex-bridge models   - List available models"
 Write-Host "  momo-codex-bridge doctor   - Run health diagnostics"
