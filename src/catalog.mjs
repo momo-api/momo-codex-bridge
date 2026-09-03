@@ -5,10 +5,42 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const FALLBACK_TEMPLATE = {
-  slug: "gpt-5.5", display_name: "GPT-5.5", description: "MOMO Codex model.", default_reasoning_level: "high",
-  supported_reasoning_levels: [{ effort: "low", description: "Fast" }, { effort: "medium", description: "Balanced" }, { effort: "high", description: "Deep" }],
-  shell_type: "shell_command", visibility: "list", supported_in_api: true, priority: 100, context_window: 200000,
-  max_context_window: 200000, effective_context_window_percent: 95, tool_mode: "code_mode_only",
+  slug: "gpt-5.5",
+  display_name: "GPT-5.5",
+  description: "MOMO Codex model.",
+  default_reasoning_level: "high",
+  supported_reasoning_levels: [
+    { effort: "low", description: "Fast" },
+    { effort: "medium", description: "Balanced" },
+    { effort: "high", description: "Deep" }
+  ],
+  shell_type: "unified_exec",
+  visibility: "list",
+  supported_in_api: true,
+  priority: 100,
+  context_window: 272000,
+  max_context_window: 872000,
+  effective_context_window_percent: 95,
+  tool_mode: "code_mode_only",
+  support_verbosity: true,
+  default_verbosity: "low",
+  default_reasoning_summary: "none",
+  apply_patch_tool_type: "freeform",
+  web_search_tool_type: "text_and_image",
+  supports_image_detail_original: true,
+  supports_search_tool: true,
+  use_responses_lite: true,
+  node_repl_auto_review_required: false,
+  node_repl_disabled: false,
+  truncation_policy: { mode: "tokens", limit: 10000 },
+  input_modalities: ["text", "image"],
+  experimental_supported_tools: [],
+  multi_agent_version: "v2",
+  include_skills_usage_instructions: false,
+  include_plugin_usage_instructions: true,
+  include_apps_usage_instructions: true,
+  availability_nux: null,
+  upgrade: null,
 };
 
 export const DESKTOP_COMPATIBILITY_ALIASES = [
@@ -62,15 +94,23 @@ export function catalogPath(env = process.env) {
 
 function bundledTemplate() {
   try {
-    const catalog = JSON.parse(execFileSync("codex", ["debug", "models", "--bundled"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
-    return catalog.models?.find((model) => model.slug === "gpt-5.5") || catalog.models?.[0] || FALLBACK_TEMPLATE;
+    const raw = execFileSync("codex", ["debug", "models", "--bundled"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const catalog = JSON.parse(raw);
+    const found = catalog.models?.find((model) => model.slug === "gpt-5.5") || catalog.models?.[0];
+    if (found) {
+      return {
+        ...FALLBACK_TEMPLATE,
+        ...found,
+      };
+    }
+    return FALLBACK_TEMPLATE;
   } catch {
     return FALLBACK_TEMPLATE;
   }
 }
 
 function displayName(model) {
-  return `MOMO ${model.id.replace(/(^|[-_])(\w)/g, (_, prefix, letter) => `${prefix}${letter.toUpperCase()}`)}`;
+  return "MOMO " + model.id.replace(/(^|[-_])(\w)/g, (_, prefix, letter) => prefix + letter.toUpperCase());
 }
 
 function status(model) {
@@ -112,14 +152,16 @@ export function buildCatalog(models, { includeDesktopAliases = true } = {}) {
         ...structuredClone(template),
         slug: model.id,
         display_name: model.display_name || displayName(model),
-        description: model.description || `MOMO model (${model.provider || "gateway"}).`,
+        description: model.description || ("MOMO model (" + (model.provider || "gateway") + ")."),
         visibility: status(model) === "stable" ? "list" : "hide",
         priority: 200 + offset,
-        context_window: model.context_window || 200000,
-        max_context_window: model.context_window || 200000,
+        context_window: model.context_window || template.context_window || 272000,
+        max_context_window: model.max_context_window || template.max_context_window || 872000,
         tool_mode: "code_mode_only",
         supported_in_api: true,
         availability_nux: null,
+        support_verbosity: true,
+        default_verbosity: "low",
         default_reasoning_level: reasoning.default_reasoning_level,
         supported_reasoning_levels: reasoning.supported_reasoning_levels,
       };
@@ -138,6 +180,8 @@ export function buildCatalog(models, { includeDesktopAliases = true } = {}) {
           priority: 150,
           tool_mode: "code_mode_only",
           supported_in_api: true,
+          support_verbosity: true,
+          default_verbosity: "low",
           default_reasoning_level: alias.default_reasoning_level,
           supported_reasoning_levels: alias.supported_reasoning_levels,
         });
@@ -152,8 +196,8 @@ export function buildCatalog(models, { includeDesktopAliases = true } = {}) {
 export function writeCatalog(models, env = process.env, options = {}) {
   const target = catalogPath(env);
   mkdirSync(dirname(target), { recursive: true });
-  const content = `${JSON.stringify(buildCatalog(models, options), null, 2)}\n`;
-  const tempFile = `${target}.${randomUUID()}.tmp`;
+  const content = JSON.stringify(buildCatalog(models, options), null, 2) + "\n";
+  const tempFile = target + "." + randomUUID() + ".tmp";
   writeFileSync(tempFile, content);
   try {
     renameSync(tempFile, target);
