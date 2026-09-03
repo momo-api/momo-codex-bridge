@@ -70,7 +70,7 @@ if (Test-Path $installDir) {
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
 Write-Step "Downloading latest release package from GitHub..."
-$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.4.2/momo-api-codex-bridge-0.4.2.tgz"
+$tgzUrl = "https://github.com/momo-api/momo-codex-bridge/releases/download/v0.5.0/momo-api-codex-bridge-0.5.0.tgz"
 $tgzPath = [System.IO.Path]::Combine($HOME, ".momo-codex-bridge", "package.tgz")
 
 try {
@@ -89,6 +89,7 @@ $bridgeCmd = [System.IO.Path]::Combine($binDir, "momo-codex-bridge.cmd")
 $bridgePs1 = [System.IO.Path]::Combine($binDir, "momo-codex-bridge.ps1")
 $switchCmd = [System.IO.Path]::Combine($binDir, "momo-codex-switch.cmd")
 $switchPs1 = [System.IO.Path]::Combine($binDir, "momo-codex-switch.ps1")
+$trayPs1   = [System.IO.Path]::Combine($binDir, "tray.ps1")
 
 "@echo off`r`nnode `"%~dp0momo-codex-bridge.mjs`" %*" | Set-Content -Path $bridgeCmd -Encoding Ascii
 "& node `"`$PSScriptRoot\\momo-codex-bridge.mjs`" @args" | Set-Content -Path $bridgePs1 -Encoding Utf8
@@ -106,9 +107,12 @@ if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-# 6. Launch Background Service
-Write-Step "Starting MOMO Codex Bridge daemon..."
+# 6. Launch Background Service & System Tray Companion
+Write-Step "Starting MOMO Codex Bridge daemon & Taskbar Tray..."
 Start-Process -FilePath "node" -ArgumentList @($bridgeBin, "serve") -WindowStyle Hidden
+if (Test-Path $trayPs1) {
+  Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", $trayPs1) -WindowStyle Hidden
+}
 
 # 7. Register PATH & current session function
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -122,13 +126,14 @@ if ($env:Path -notlike "*$binDir*") {
 function global:momo-codex-bridge { & node "$bridgeBin" @args }
 function global:momo-codex-switch { & node "$bridgeBin" @args }
 
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 600
 
 Write-Success "=========================================================="
 Write-Success "  MOMO Codex Bridge installed and running successfully!   "
 Write-Success "=========================================================="
 Write-Host ""
 Write-Host "Local Bridge is listening on: http://127.0.0.1:$Port/v1" -ForegroundColor Yellow
+Write-Host "Taskbar System Tray Icon (Indigo M badge with Green Dot) is now active." -ForegroundColor Green
 Write-Host "Codex CLI & ChatGPT Desktop have been configured with requires_openai_auth=false" -ForegroundColor Yellow
 Write-Host "Synced models are ready. Restart Codex App to use." -ForegroundColor Yellow
 Write-Host ""
@@ -139,5 +144,6 @@ Write-Host "Commands available in this and new terminals:"
 Write-Host "  momo-codex-bridge status   - Check bridge running status"
 Write-Host "  momo-codex-bridge models   - List available models"
 Write-Host "  momo-codex-bridge doctor   - Run health diagnostics"
+Write-Host "  momo-codex-bridge tray     - Launch System Tray Companion"
 Write-Host "  momo-codex-bridge rollback - Restore previous config"
 Write-Host ""

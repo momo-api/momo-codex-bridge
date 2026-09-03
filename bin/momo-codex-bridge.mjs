@@ -135,7 +135,25 @@ async function main() {
       console.error("Make sure 'momo-codex-bridge serve' is running.");
       process.exit(1);
     }
-  } else if (command === "rollback") {
+    } else if (command === "tray") {
+    const settings = resolveSettings();
+    if (process.platform === "win32") {
+      const { spawn } = await import("node:child_process");
+      const { dirname, join } = await import("node:path");
+      const { fileURLToPath } = await import("node:url");
+      const scriptDir = dirname(fileURLToPath(import.meta.url));
+      const trayScript = join(scriptDir, "tray.ps1");
+      const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", trayScript, "-Port", String(settings.port || 18789)], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      child.unref();
+      console.log("MOMO Codex Bridge System Tray Companion launched.");
+    } else {
+      console.log("System Tray Companion is currently supported on Windows.");
+    }
+} else if (command === "rollback") {
     const restored = rollback();
     console.log("Restored backup files:", restored);
   } else if (command === "uninstall") {
